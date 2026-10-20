@@ -7,6 +7,7 @@ class SubjectBase(BaseModel):
     name: str
     code: str
     department: str
+    class_section: Optional[str] = None
 
     @field_validator('code')
     @classmethod
@@ -20,6 +21,7 @@ class SubjectCreate(SubjectBase):
 
 class SubjectResponse(SubjectBase):
     id: int
+    professor_id: int
     created_at: datetime
 
     model_config = {"from_attributes": True}

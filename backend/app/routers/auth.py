@@ -8,16 +8,52 @@ from app.models.student import Student
 from app.utils.security import get_password_hash, verify_password, create_access_token
 from app.utils.dependencies import get_current_user, require_professor, require_student
 
+import re
+
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
 )
 
+def validate_password_rules(password: str) -> None:
+    """
+    Validates that password satisfies minimum security guidelines:
+    - At least 8 characters long
+    - At least one uppercase letter (A-Z)
+    - At least one lowercase letter (a-z)
+    - At least one numeric digit (0-9)
+    - At least one special symbol (@$!%*?&#^_-.+=~)
+    """
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must be at least 8 characters long"
+        )
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must contain at least one uppercase letter (A-Z)"
+        )
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must contain at least one lowercase letter (a-z)"
+        )
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must contain at least one numeric digit (0-9)"
+        )
+    if not re.search(r"[@$!%*?&#^_\-\.+=\~]", password):
+        raise HTTPException(
+            status_code=400, 
+            detail="Password must contain at least one special symbol (e.g. @$!%*?&#^_-.+=~)"
+        )
+
 @router.post("/professor/register", response_model=CurrentUser, status_code=status.HTTP_201_CREATED)
 def register_professor(prof_in: ProfessorRegister, db: Session = Depends(get_db)):
-    # Basic password validation
-    if len(prof_in.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    # Enforce password complexity rules
+    validate_password_rules(prof_in.password)
         
     existing_prof = db.query(Professor).filter(Professor.email == prof_in.email).first()
     if existing_prof:
@@ -59,8 +95,7 @@ def login_professor(prof_in: ProfessorLogin, db: Session = Depends(get_db)):
 
 @router.post("/student/register", response_model=CurrentUser)
 def register_student(student_in: StudentRegister, db: Session = Depends(get_db)):
-    if len(student_in.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    validate_password_rules(student_in.password)
         
     student = db.query(Student).filter(
         Student.roll_number == student_in.roll_number,

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -10,7 +10,7 @@ class Rubric(Base):
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     criterion = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    marks = Column(Integer, nullable=False)
+    marks = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

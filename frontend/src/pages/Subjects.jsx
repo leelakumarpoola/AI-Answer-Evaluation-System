@@ -9,7 +9,7 @@ const Subjects = () => {
   const [error, setError] = useState(null);
 
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', code: '', department: '' });
+  const [formData, setFormData] = useState({ name: '', code: '', department: '', class_section: '' });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -37,7 +37,7 @@ const Subjects = () => {
       const response = await api.post('/subjects/', formData);
       setSubjects([...subjects, response.data]);
       setShowForm(false);
-      setFormData({ name: '', code: '', department: '' });
+      setFormData({ name: '', code: '', department: '', class_section: '' });
     } catch (err) {
       setFormError(err.response?.data?.detail || 'Unable to create subject.');
     } finally {
@@ -49,7 +49,7 @@ const Subjects = () => {
     <div className="max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Subjects</h1>
+          <h1 className="text-3xl font-bold text-slate-800">My Subjects</h1>
           <p className="text-slate-500 mt-1">Manage and view all registered subjects.</p>
         </div>
         <button
@@ -65,7 +65,7 @@ const Subjects = () => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
           <h2 className="text-lg font-bold text-slate-800 mb-4">Create New Subject</h2>
           {formError && (
-            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-md border border-red-100">
+            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-md border border-red-100 whitespace-pre-wrap">
               {formError}
             </div>
           )}
@@ -78,7 +78,7 @@ const Subjects = () => {
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="e.g. Blockchain Architecture Design"
+                  placeholder="e.g. Artificial Intelligence"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
@@ -89,20 +89,31 @@ const Subjects = () => {
                   required
                   value={formData.code}
                   onChange={(e) => setFormData({...formData, code: e.target.value})}
-                  placeholder="e.g. BCSE329L"
+                  placeholder="e.g. BCSE304L"
                   pattern="^BCSE[0-9]{3}L$"
                   title="Must match format: BCSE###L"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Class/Section</label>
+                <input 
+                  type="text" 
+                  required
+                  value={formData.class_section}
+                  onChange={(e) => setFormData({...formData, class_section: e.target.value})}
+                  placeholder="e.g. CSE-A"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
                 <input 
                   type="text" 
                   required
                   value={formData.department}
                   onChange={(e) => setFormData({...formData, department: e.target.value})}
-                  placeholder="e.g. Computer Science and Engineering"
+                  placeholder="e.g. Computer Science"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
@@ -152,15 +163,23 @@ const Subjects = () => {
                     {subject.code}
                   </span>
                 </div>
-                <p className="text-slate-500">{subject.department}</p>
+                <p className="text-slate-500">Class: {subject.class_section}</p>
+                <p className="text-slate-500 text-sm">{subject.department}</p>
               </div>
-              <Link 
-                to={`/professor/subjects/${subject.id}/exams`}
-                className="flex items-center justify-center w-full py-2.5 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200 rounded-xl font-medium transition-colors"
-              >
-                View Exams
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Link>
+              <div className="flex space-x-3">
+                <Link 
+                  to={`/professor/subjects/${subject.id}/exams`}
+                  className="flex-1 flex items-center justify-center py-2.5 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200 rounded-xl font-medium transition-colors"
+                >
+                  View Subject
+                </Link>
+                <Link 
+                  to={`/professor/subjects/${subject.id}/exams?create=true`}
+                  className="flex-1 flex items-center justify-center py-2.5 bg-slate-800 text-white hover:bg-slate-700 border border-slate-800 rounded-xl font-medium transition-colors"
+                >
+                  Create Assessment
+                </Link>
+              </div>
             </div>
           ))}
         </div>

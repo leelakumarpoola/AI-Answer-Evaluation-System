@@ -8,7 +8,7 @@ class RubricEvaluation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     evaluation_id = Column(Integer, ForeignKey("evaluations.id"), nullable=False)
-    rubric_id = Column(Integer, ForeignKey("rubrics.id"), nullable=False)
+    rubric_id = Column(Integer, ForeignKey("rubrics.id", ondelete="CASCADE"), nullable=False)
     evidence_score = Column(Float, nullable=False)
     suggested_marks = Column(Float, nullable=False)
     reason = Column(String, nullable=True)

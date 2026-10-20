@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../api/axios';
 import { 
   ChevronLeft, FileText, Calendar, Clock, BookOpen, AlertCircle, 
-  UploadCloud, CheckCircle2, PlayCircle, Users, Eye, Edit3
+  UploadCloud, CheckCircle2, PlayCircle, Users, Eye, Edit3, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -153,12 +153,17 @@ const ExamDetails = () => {
   const startEvaluation = async (answerScriptId) => {
     setEvaluatingScript(answerScriptId);
     try {
-      await api.post(`/answer-scripts/${answerScriptId}/process`);
-      await api.post(`/answer-scripts/${answerScriptId}/ocr`);
-      await api.post(`/answer-scripts/${answerScriptId}/extract-answers`);
-      await api.post(`/answer-scripts/${answerScriptId}/semantic-similarity`);
-      await api.post(`/answer-scripts/${answerScriptId}/rubric-evaluation`);
-      await api.post(`/answer-scripts/${answerScriptId}/feedback`);
+      try {
+        await api.post(`/answer-scripts/${answerScriptId}/evaluate-full`);
+      } catch (pipelineErr) {
+        // Resilient fallback to individual phase endpoints if evaluate-full encounters an error
+        await api.post(`/answer-scripts/${answerScriptId}/process`);
+        await api.post(`/answer-scripts/${answerScriptId}/ocr`);
+        await api.post(`/answer-scripts/${answerScriptId}/extract-answers`);
+        await api.post(`/answer-scripts/${answerScriptId}/semantic-similarity`);
+        await api.post(`/answer-scripts/${answerScriptId}/rubric-evaluation`);
+        await api.post(`/answer-scripts/${answerScriptId}/feedback`);
+      }
       
       showSuccess('AI Evaluation completed successfully.');
       fetchExamData();
@@ -166,6 +171,22 @@ const ExamDetails = () => {
       showError(err.response?.data?.detail || 'Evaluation pipeline failed. Please try again.');
     } finally {
       setEvaluatingScript(null);
+    }
+  };
+
+  const handleOpenStudentPdf = async (studentId) => {
+    try {
+      const response = await api.get(`/exams/${examId}/students/${studentId}/answer-script/pdf`, {
+        responseType: 'blob'
+      });
+      const fileBlob = new Blob([response.data], { type: 'application/pdf' });
+      const fileURL = URL.createObjectURL(fileBlob);
+      const pdfWin = window.open(fileURL, '_blank');
+      if (!pdfWin) {
+        showError('Popup blocked. Please allow popups to view the original answer sheet PDF.');
+      }
+    } catch (err) {
+      showError('Failed to open original answer sheet PDF. The file may be missing or inaccessible.');
     }
   };
 
@@ -349,21 +370,35 @@ const ExamDetails = () => {
                           {isUploading ? 'Uploading...' : 'Upload Script'}
                           <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleScriptUpload(student.id, e)} disabled={isUploading} />
                         </label>
-                      ) : !isEvaluated ? (
-                        <button 
-                          onClick={() => startEvaluation(scriptRes.answer_script_id)}
-                          disabled={!masterDocsReady || isEvaluating}
-                          className="inline-flex items-center px-4 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          <PlayCircle className="w-4 h-4 mr-1.5" /> Start AI Evaluation
-                        </button>
                       ) : (
-                        <Link 
-                          to={`/professor/exams/${examId}/review/${student.id}`}
-                          className="inline-flex items-center px-4 py-1.5 bg-slate-800 text-white rounded-md hover:bg-slate-700"
-                        >
-                          <Eye className="w-4 h-4 mr-1.5" /> View Results
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleOpenStudentPdf(student.id)}
+                            className="inline-flex items-center px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                            title="Open original scanned answer sheet PDF"
+                          >
+                            <FileText className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                            PDF
+                            <ExternalLink className="w-3 h-3 ml-1 text-indigo-400" />
+                          </button>
+
+                          {!isEvaluated ? (
+                            <button 
+                              onClick={() => startEvaluation(scriptRes.answer_script_id)}
+                              disabled={!masterDocsReady || isEvaluating}
+                              className="inline-flex items-center px-3.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-xs font-semibold transition-colors"
+                            >
+                              <PlayCircle className="w-3.5 h-3.5 mr-1" /> Evaluate
+                            </button>
+                          ) : (
+                            <Link 
+                              to={`/professor/exams/${examId}/review/${student.id}`}
+                              className="inline-flex items-center px-3.5 py-1.5 bg-slate-800 text-white rounded-lg hover:bg-slate-700 text-xs font-semibold transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1" /> Review
+                            </Link>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>

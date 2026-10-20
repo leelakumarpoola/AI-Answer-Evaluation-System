@@ -42,11 +42,32 @@ class CriterionEvaluationSchema(BaseModel):
     suggested_marks: float
     reason: Optional[str] = None
 
+class DiagramEvaluationSchema(BaseModel):
+    diagram_detected: bool = False
+    diagram_type: Optional[str] = None
+    diagram_crop_url: Optional[str] = None
+    page_number: Optional[int] = None
+    bounding_box: Optional[List[int]] = None
+    model_components: List[str] = []
+    student_components: List[str] = []
+    matching_components: List[str] = []
+    missing_components: List[str] = []
+    connectivity_errors: List[str] = []
+    reversed_arrows: List[str] = []
+    text_diagram_inconsistencies: List[str] = []
+    has_contradiction: bool = False
+    needs_review: bool = False
+    review_reason: Optional[str] = None
+    justification: Optional[str] = None
+    suggested_marks: Optional[float] = None
+    max_marks: Optional[float] = None
+
 class AIEvaluationSchema(BaseModel):
     similarity_score: Optional[float] = None
     criterion_evaluations: List[CriterionEvaluationSchema]
     ai_suggested_marks: Optional[float] = None
     ai_feedback: Optional[str] = None
+    diagram_evaluation: Optional[DiagramEvaluationSchema] = None
 
 class ProfessorReviewSchema(BaseModel):
     final_marks: Optional[float] = None
@@ -65,3 +86,8 @@ class FullReviewPackageResponse(BaseModel):
     rubrics: List[RubricInfoSchema]
     ai_evaluation: AIEvaluationSchema
     professor_review: ProfessorReviewSchema
+    diagram_evaluation: Optional[DiagramEvaluationSchema] = None
+    answer_script_id: Optional[int] = None
+    answer_script_file_name: Optional[str] = None
+    answer_script_page_count: Optional[int] = None
+

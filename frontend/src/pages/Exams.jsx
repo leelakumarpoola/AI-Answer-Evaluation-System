@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { FileText, Plus, ChevronLeft, Calendar, Clock } from 'lucide-react';
 
 const Exams = () => {
   const { subjectId } = useParams();
+  const location = useLocation();
   const [subject, setSubject] = useState(null);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13,13 +14,21 @@ const Exams = () => {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    exam_type: 'Internal',
+    exam_type: 'Internal Assessment',
     exam_date: '',
-    total_marks: 100,
+    total_marks: 50,
     duration_minutes: 120
   });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
+
+  useEffect(() => {
+    // Check if we should show the create form automatically
+    const queryParams = new URLSearchParams(location.search);
+    if (queryParams.get('create') === 'true') {
+      setShowForm(true);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     fetchData();
@@ -60,48 +69,53 @@ const Exams = () => {
       setShowForm(false);
       setFormData({
         name: '',
-        exam_type: 'Internal',
+        exam_type: 'Internal Assessment',
         exam_date: '',
-        total_marks: 100,
+        total_marks: 50,
         duration_minutes: 120
       });
     } catch (err) {
-      setFormError(err.response?.data?.detail || 'Unable to create exam.');
+      setFormError(err.response?.data?.detail || 'Unable to create assessment.');
     } finally {
       setFormLoading(false);
     }
   };
 
   if (loading) {
-    return <div className="text-center py-12 text-slate-500">Loading exams...</div>;
+    return <div className="text-center py-12 text-slate-500">Loading...</div>;
   }
 
   return (
     <div className="max-w-5xl mx-auto">
-      <Link to="/professor/subjects" className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-slate-800 mb-6 transition-colors">
+      <Link to="/professor/dashboard" className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-slate-800 mb-6 transition-colors">
         <ChevronLeft className="w-4 h-4 mr-1" />
-        Back to Subjects
+        Back to Dashboard
       </Link>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">
-            {subject ? subject.name : 'Exams'}
+          <h1 className="text-3xl font-bold text-slate-800 mb-2">
+            {subject ? subject.name : 'Subject Details'}
           </h1>
-          {subject && <p className="text-slate-500 mt-1 font-medium">{subject.code} • {subject.department}</p>}
+          {subject && (
+            <div className="text-slate-600 font-medium flex flex-wrap gap-x-4 gap-y-2">
+              <span>Course Code: {subject.code}</span>
+              <span>Class: {subject.class_section || subject.department}</span>
+            </div>
+          )}
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors font-medium whitespace-nowrap"
         >
           <Plus className="w-5 h-5 mr-2" />
-          Create Exam
+          Create Assessment
         </button>
       </div>
 
       {showForm && (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Create New Exam</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-4">Create New Assessment</h2>
           {formError && (
             <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-md border border-red-100">
               {formError}
@@ -110,7 +124,7 @@ const Exams = () => {
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Exam Name</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Assessment Name</label>
                 <input 
                   type="text" 
                   required
@@ -121,16 +135,17 @@ const Exams = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Exam Type</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Assessment Type</label>
                 <select 
                   required
                   value={formData.exam_type}
                   onChange={(e) => setFormData({...formData, exam_type: e.target.value})}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white"
                 >
-                  <option value="Internal">Internal</option>
-                  <option value="Terminal">Terminal</option>
+                  <option value="Internal Assessment">Internal Assessment</option>
+                  <option value="Terminal Examination">Terminal Examination</option>
                   <option value="Assignment">Assignment</option>
+                  <option value="Quiz">Quiz</option>
                 </select>
               </div>
               <div>
@@ -145,7 +160,7 @@ const Exams = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Exam Date (Optional)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Assessment Date (Optional)</label>
                 <input 
                   type="date" 
                   value={formData.exam_date}
@@ -177,7 +192,7 @@ const Exams = () => {
                 disabled={formLoading}
                 className="px-6 py-2 bg-slate-800 text-white font-medium rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
               >
-                {formLoading ? 'Saving...' : 'Save Exam'}
+                {formLoading ? 'Saving...' : 'Save Assessment'}
               </button>
             </div>
           </form>
@@ -193,8 +208,8 @@ const Exams = () => {
       {exams.length === 0 && !error ? (
         <div className="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center">
           <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-800 mb-1">No exams created yet</h3>
-          <p className="text-slate-500">Create an exam to begin processing answer scripts.</p>
+          <h3 className="text-lg font-medium text-slate-800 mb-1">No assessments created yet</h3>
+          <p className="text-slate-500">Create an assessment to begin processing answer scripts.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -225,7 +240,7 @@ const Exams = () => {
                 to={`/professor/exams/${exam.id}`}
                 className="block text-center w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium rounded-xl border border-slate-200 transition-colors"
               >
-                View Exam Details
+                View Assessment Details
               </Link>
             </div>
           ))}

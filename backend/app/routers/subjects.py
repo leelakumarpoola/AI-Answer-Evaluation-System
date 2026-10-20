@@ -16,22 +16,36 @@ router = APIRouter(
 
 @router.get("/", response_model=List[SubjectResponse])
 def get_subjects(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    return db.query(models.Subject).all()
+    query = db.query(models.Subject)
+    if current_user.role == "professor":
+        query = query.filter(models.Subject.professor_id == current_user.id)
+    return query.all()
 
 @router.get("/{subject_id}", response_model=SubjectResponse)
 def get_subject(subject_id: int, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    query = db.query(models.Subject).filter(models.Subject.id == subject_id)
+    if current_user.role == "professor":
+        query = query.filter(models.Subject.professor_id == current_user.id)
+    subject = query.first()
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found")
     return subject
 
 @router.post("/", response_model=SubjectResponse, status_code=status.HTTP_201_CREATED)
 def create_subject(subject_in: SubjectCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_professor)):
-    existing = db.query(models.Subject).filter(models.Subject.code == subject_in.code).first()
+    existing = db.query(models.Subject).filter(
+        models.Subject.code == subject_in.code,
+        models.Subject.class_section == subject_in.class_section,
+        models.Subject.professor_id == current_user.id
+    ).first()
+    
     if existing:
-        raise HTTPException(status_code=409, detail="Subject with this code already exists")
+        raise HTTPException(
+            status_code=409, 
+            detail=f"This subject already exists in your dashboard (ID: {existing.id}). You can create a new assessment under the existing subject."
+        )
         
-    new_subject = models.Subject(**subject_in.model_dump())
+    new_subject = models.Subject(**subject_in.model_dump(), professor_id=current_user.id)
     db.add(new_subject)
     try:
         db.commit()

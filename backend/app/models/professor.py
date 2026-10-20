@@ -15,4 +15,5 @@ class Professor(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
+    subjects = relationship("Subject", back_populates="professor", cascade="all, delete-orphan")
     exams = relationship("Exam", back_populates="professor", cascade="all, delete-orphan")

@@ -20,6 +20,7 @@ class Evaluation(Base):
     reviewed_by = Column(Integer, ForeignKey("professors.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
+    diagram_data = Column(String, nullable=True)
 
     # Relationships
     student_answer = relationship("StudentAnswer", back_populates="evaluation")

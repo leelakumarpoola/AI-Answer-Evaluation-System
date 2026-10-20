@@ -1,10 +1,11 @@
 import os
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
-from app.utils.dependencies import require_professor, get_current_user
+from app.utils.dependencies import require_professor, get_current_user, get_current_user_flexible
 from app.schemas.auth import CurrentUser
 from app.services.document_processing_service import process_answer_script
 from app.services.ocr_service import process_answer_script_ocr, get_answer_script_ocr_results
@@ -80,6 +81,134 @@ def upload_answer_script(
     db.commit()
     db.refresh(new_script)
     return new_script
+
+
+def _serve_answer_script_pdf(script: models.AnswerScript):
+    """
+    Validates and streams the complete original scanned answer-sheet PDF file.
+    Preserves original handwriting, image resolution, and page order without modification.
+    """
+    if not script.file_path or not os.path.exists(script.file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Original student answer sheet PDF file was not found on server."
+        )
+
+    file_name = script.file_name or f"student_answer_script_{script.id}.pdf"
+    
+    # Return raw PDF with inline disposition to open in browser native PDF viewer
+    return FileResponse(
+        path=script.file_path,
+        media_type="application/pdf",
+        filename=file_name,
+        headers={
+            "Content-Disposition": f'inline; filename="{file_name}"',
+            "Content-Type": "application/pdf"
+        }
+    )
+
+
+@router.get("/answer-scripts/{answer_script_id}/pdf")
+def get_answer_script_pdf(
+    answer_script_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user_flexible)
+):
+    """
+    Returns the complete, original scanned answer sheet PDF for an answer script.
+    Authorized for the professor owning the exam or the student who submitted the script.
+    """
+    script = db.query(models.AnswerScript).filter(models.AnswerScript.id == answer_script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="Answer script record not found")
+
+    exam = db.query(models.Exam).filter(models.Exam.id == script.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Associated exam not found")
+
+    if current_user.role == "professor":
+        if exam.professor_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not own the exam for this answer script")
+    elif current_user.role == "student":
+        if script.student_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You are not authorized to view other students' answer scripts")
+    else:
+        raise HTTPException(status_code=403, detail="Unauthorized role")
+
+    return _serve_answer_script_pdf(script)
+
+
+@router.get("/exams/{exam_id}/students/{student_id}/answer-script/pdf")
+def get_exam_student_answer_script_pdf(
+    exam_id: int,
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user_flexible)
+):
+    """
+    Returns the complete, original scanned answer sheet PDF for a student and exam.
+    Authorized for the exam professor or the student.
+    """
+    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user.role == "professor":
+        if exam.professor_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not own this exam")
+    elif current_user.role == "student":
+        if student_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You are not authorized to view this answer script")
+    else:
+        raise HTTPException(status_code=403, detail="Unauthorized role")
+
+    script = db.query(models.AnswerScript).filter(
+        models.AnswerScript.exam_id == exam_id,
+        models.AnswerScript.student_id == student_id
+    ).first()
+
+    if not script:
+        raise HTTPException(status_code=404, detail="No answer script uploaded for this student in this exam")
+
+    return _serve_answer_script_pdf(script)
+
+
+@router.get("/evaluations/{evaluation_id}/answer-script/pdf")
+def get_evaluation_answer_script_pdf(
+    evaluation_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user_flexible)
+):
+    """
+    Returns the original answer sheet PDF directly from an evaluation ID.
+    """
+    eval_record = db.query(models.Evaluation).filter(models.Evaluation.id == evaluation_id).first()
+    if not eval_record:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+
+    student_answer = eval_record.student_answer
+    if not student_answer:
+        raise HTTPException(status_code=404, detail="Student answer not found for evaluation")
+
+    script = student_answer.answer_script
+    if not script:
+        raise HTTPException(status_code=404, detail="Answer script not found")
+
+    exam = db.query(models.Exam).filter(models.Exam.id == script.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user.role == "professor":
+        if exam.professor_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not own the exam for this evaluation")
+    elif current_user.role == "student":
+        if script.student_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You are not authorized to view this answer script")
+    else:
+        raise HTTPException(status_code=403, detail="Unauthorized role")
+
+    return _serve_answer_script_pdf(script)
+
 
 @router.post("/answer-scripts/{answer_script_id}/process")
 def process_script(
@@ -296,3 +425,192 @@ def get_ai_feedback(answer_script_id: int, db: Session = Depends(get_db), curren
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/answer-scripts/{answer_script_id}/evaluate-full")
+def evaluate_full_pipeline(
+    answer_script_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: CurrentUser = Depends(require_professor)
+):
+    """
+    Executes the complete end-to-end evaluation pipeline:
+    1. PDF → images (if not done)
+    2. OCR (if not done)
+    3. Answer segmentation
+    4. Semantic similarity
+    5. Rubric evaluation
+    6. Feedback generation
+    
+    Returns detailed results including answers flagged for review.
+    """
+    script = db.query(models.AnswerScript).filter(models.AnswerScript.id == answer_script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="Answer script not found")
+        
+    exam = db.query(models.Exam).filter(models.Exam.id == script.exam_id).first()
+    if not exam or exam.professor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not own the exam for this answer script")
+
+    # Pre-check: question paper must have been processed first
+    from app.models.question import Question
+    questions = db.query(Question).filter(Question.exam_id == script.exam_id).all()
+    if not questions:
+        # Auto-process master documents if they exist and are not yet extracted
+        from app.models.exam_document import ExamDocument
+        from app.services.document_processing_service import process_document
+        from app.services.ocr_service import process_document_ocr
+        from app.services.document_extraction_service import extract_information
+
+        qp_doc = db.query(ExamDocument).filter(
+            ExamDocument.exam_id == script.exam_id,
+            ExamDocument.document_type == "question_paper"
+        ).first()
+
+        if qp_doc:
+            logger.info(f"Auto-processing question paper for exam {script.exam_id}...")
+            try:
+                if qp_doc.processing_status != "processed":
+                    process_document(qp_doc.id, db)
+                process_document_ocr(qp_doc.id, db)
+                extract_information(script.exam_id, qp_doc.id, db)
+
+                for dtype in ["model_answer", "marks_rubric"]:
+                    m_doc = db.query(ExamDocument).filter(
+                        ExamDocument.exam_id == script.exam_id,
+                        ExamDocument.document_type == dtype
+                    ).first()
+                    if m_doc:
+                        if m_doc.processing_status != "processed":
+                            process_document(m_doc.id, db)
+                        process_document_ocr(m_doc.id, db)
+                        extract_information(script.exam_id, m_doc.id, db)
+
+                questions = db.query(Question).filter(Question.exam_id == script.exam_id).all()
+            except Exception as auto_err:
+                logger.error(f"Auto-processing master documents error: {auto_err}")
+
+    if not questions:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No questions found for this exam. "
+                "Please upload the question paper and click 'Process Documents' first."
+            )
+        )
+        
+    from app.services.student_answer_extraction_service import extract_student_answers
+    from app.services.semantic_similarity_service import calculate_semantic_similarity
+    from app.services.rubric_evaluation_service import evaluate_rubric
+    from app.services.feedback_service import generate_and_store_feedback
+
+    pipeline_status = {}
+
+    # 1. Page rendering
+    if script.processing_status != "processed":
+        process_answer_script(answer_script_id, db)
+        pipeline_status["rendering"] = "completed"
+    else:
+        pipeline_status["rendering"] = "cached"
+        
+    # 2. OCR
+    if script.ocr_status != "processed":
+        process_answer_script_ocr(answer_script_id, db)
+        pipeline_status["ocr"] = "completed"
+    else:
+        pipeline_status["ocr"] = "cached"
+        
+    # 3. Answer Segmentation
+    extraction_result = extract_student_answers(answer_script_id, db)
+    pipeline_status["segmentation"] = extraction_result.get("extraction_method", "completed")
+    
+    # 4. Semantic Similarity
+    calculate_semantic_similarity(answer_script_id, db)
+    pipeline_status["similarity"] = "completed"
+    
+    # 5. Rubric Evaluation
+    rubric_results = evaluate_rubric(answer_script_id, db)
+    pipeline_status["rubric_evaluation"] = "completed"
+    
+    # 6. Feedback Generation
+    student_answers = db.query(models.StudentAnswer).filter(
+        models.StudentAnswer.answer_script_id == script.id
+    ).all()
+    feedback_results = []
+    for sa in student_answers:
+        if sa.evaluation:
+            fb = generate_and_store_feedback(db, sa.evaluation)
+            feedback_results.append({
+                "evaluation_id": sa.evaluation.id,
+                "feedback": fb.feedback_text
+            })
+
+    # Collect review flags
+    needs_review = [
+        r for r in rubric_results
+        if r.get("needs_review") or r.get("status") in ("rubric_missing", "model_answer_missing")
+    ]
+
+    return {
+        "answer_script_id": answer_script_id,
+        "status": "completed",
+        "pipeline_status": pipeline_status,
+        "evaluations_count": len(rubric_results),
+        "feedback_count": len(feedback_results),
+        "needs_review_count": len(needs_review),
+        "total_words_ocr": extraction_result.get("total_words", 0),
+        "extraction_method": extraction_result.get("extraction_method", "unknown"),
+        "message": (
+            f"Evaluation complete. {len(needs_review)} answer(s) flagged for manual review."
+            if needs_review else "Evaluation complete. All answers evaluated with confidence."
+        )
+    }
+
+
+@router.get("/answer-scripts/{answer_script_id}/ocr/benchmark")
+def benchmark_ocr_engines(
+    answer_script_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_professor)
+):
+    """
+    Benchmark Tesseract vs TrOCR on the first 3 pages of an answer script.
+    Requires the script to have been processed (PDF → images) first.
+    
+    TrOCR must be enabled via TROCR_ENABLED=true in .env.
+    """
+    script = db.query(models.AnswerScript).filter(models.AnswerScript.id == answer_script_id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="Answer script not found")
+    
+    exam = db.query(models.Exam).filter(models.Exam.id == script.exam_id).first()
+    if not exam or exam.professor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if script.processing_status != "processed":
+        raise HTTPException(
+            status_code=400,
+            detail="Process the answer script first (PDF → images) before benchmarking"
+        )
+
+    from app.services.document_processing_service import PROCESSED_ANSWERS_DIR
+    from app.services.trocr_service import benchmark_ocr_backends
+    import os
+
+    image_dir = os.path.join(PROCESSED_ANSWERS_DIR, str(answer_script_id))
+    if not os.path.exists(image_dir):
+        raise HTTPException(status_code=400, detail="No processed images found")
+
+    # Benchmark on first 3 pages max
+    image_files = sorted([
+        os.path.join(image_dir, f)
+        for f in os.listdir(image_dir)
+        if f.endswith(".png") and f.startswith("page_")
+    ])[:3]
+
+    if not image_files:
+        raise HTTPException(status_code=400, detail="No page images available for benchmarking")
+
+    result = benchmark_ocr_backends(image_files)
+    return result
+

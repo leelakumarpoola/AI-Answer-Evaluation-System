@@ -100,19 +100,45 @@ def get_student_performance(db: Session, exam_id: int):
     if not exam:
         return None
         
-    students = db.query(Student).all()
+    students = db.query(Student).order_by(Student.roll_number).all()
+    scripts = {
+        s.student_id: s
+        for s in db.query(AnswerScript).filter(AnswerScript.exam_id == exam_id).all()
+    }
+
     results = []
     for student in students:
+        script = scripts.get(student.id)
         res = generate_student_exam_result(db, exam_id, student.id)
-        if res:
-            results.append({
-                "student_name": res["student_name"],
-                "roll_number": res["roll_number"],
-                "total_marks": res["total_marks"],
-                "maximum_marks": res["maximum_marks"],
-                "percentage": res["percentage"],
-                "result_status": res["status"]
-            })
+        if not res:
+            continue
+
+        stage = "not_submitted"
+        ai_marks = 0.0
+
+        if script:
+            answers = db.query(StudentAnswer).filter(StudentAnswer.answer_script_id == script.id).all()
+            evals = [a.evaluation for a in answers if a.evaluation]
+            if evals:
+                ai_marks = sum((e.awarded_marks or 0.0) for e in evals)
+                all_approved = all(e.review_status == "approved" and e.final_marks is not None for e in evals)
+                stage = "approved" if all_approved else "ai_evaluated"
+            else:
+                stage = "script_uploaded"
+
+        results.append({
+            "student_id": student.id,
+            "student_name": student.name,
+            "roll_number": student.roll_number,
+            "email": student.email,
+            "total_marks": res["total_marks"],
+            "maximum_marks": res["maximum_marks"],
+            "percentage": res["percentage"],
+            "result_status": res["status"],
+            "ai_suggested_marks": round(ai_marks, 2) if ai_marks else (res["total_marks"] if stage == "approved" else None),
+            "answer_script_id": script.id if script else None,
+            "evaluation_stage": stage
+        })
     return results
 
 def get_question_performance(db: Session, exam_id: int):

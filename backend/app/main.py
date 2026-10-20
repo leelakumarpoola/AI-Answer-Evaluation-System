@@ -6,6 +6,14 @@ from app import models
 
 # Create all tables in the database
 Base.metadata.create_all(bind=engine)
+try:
+    with engine.begin() as con:
+        try:
+            con.execute(text("ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS diagram_data TEXT;"))
+        except Exception:
+            con.execute(text("ALTER TABLE evaluations ADD COLUMN diagram_data TEXT;"))
+except Exception:
+    pass
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,7 +27,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173", 
+        "http://127.0.0.1:5173",
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "https://ai-evaluation-portal.local"
     ],
     allow_credentials=True,
@@ -27,9 +37,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routers import students, auth, subjects, exams, documents, answer_scripts, evaluations, results, reports
+from app.routers import students, auth, subjects, exams, documents, answer_scripts, evaluations, results, reports, dashboard
 app.include_router(students.router)
 app.include_router(auth.router)
+app.include_router(dashboard.router)
 app.include_router(subjects.router)
 app.include_router(exams.router)
 app.include_router(documents.router)
@@ -37,6 +48,16 @@ app.include_router(answer_scripts.router)
 app.include_router(evaluations.router)
 app.include_router(results.router)
 app.include_router(reports.router)
+
+@app.on_event("startup")
+def startup_event():
+    # Warm up SBERT model in the background at startup to eliminate evaluation cold-start latency
+    try:
+        from app.services.semantic_similarity_service import get_sbert_model
+        get_sbert_model()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"SBERT model warmup skipped or deferred: {e}")
 
 @app.get("/")
 def read_root():

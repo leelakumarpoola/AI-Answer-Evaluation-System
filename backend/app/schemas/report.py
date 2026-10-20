@@ -26,12 +26,17 @@ class ExamSummaryResponse(BaseModel):
     average_percentage: Optional[float] = None
 
 class StudentPerformanceResponse(BaseModel):
+    student_id: Optional[int] = None
     student_name: str
     roll_number: str
+    email: Optional[str] = None
     total_marks: float
     maximum_marks: float
     percentage: float
     result_status: str
+    ai_suggested_marks: Optional[float] = None
+    answer_script_id: Optional[int] = None
+    evaluation_stage: Optional[str] = None  # 'approved', 'ai_evaluated', 'script_uploaded', 'not_submitted'
 
 class QuestionPerformanceResponse(BaseModel):
     question_number: str

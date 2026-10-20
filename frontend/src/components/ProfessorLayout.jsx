@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, BookOpen, FileText, Users, User } from 'lucide-react';
+import { LogOut, LayoutDashboard, BookOpen, FileText, Users, User, CheckCircle2, BarChart3, Settings } from 'lucide-react';
 
 const ProfessorLayout = () => {
   const { user, logout } = useAuth();
@@ -10,8 +10,13 @@ const ProfessorLayout = () => {
   const navItems = [
     { name: 'Dashboard', path: '/professor/dashboard', icon: LayoutDashboard },
     { name: 'Subjects', path: '/professor/subjects', icon: BookOpen },
-    { name: 'Exams', path: '/professor/subjects', activePattern: '/professor/exams', icon: FileText },
+    { name: 'Assessments', path: '/professor/subjects', activePattern: '/professor/exams', icon: FileText },
+    { name: 'Evaluation', path: '/professor/evaluations', icon: CheckCircle2 },
+    { name: 'Results', path: '/professor/results', icon: FileText },
+    { name: 'Reports & Analysis', path: '/professor/reports', icon: BarChart3 },
     { name: 'Students', path: '/professor/students', icon: Users },
+    { name: 'Profile', path: '/professor/profile', icon: User },
+    { name: 'Settings', path: '/professor/settings', icon: Settings },
   ];
 
   const isActive = (item) => {
@@ -30,7 +35,7 @@ const ProfessorLayout = () => {
           <p className="text-xs text-slate-500 mt-1">Professor Portal</p>
         </div>
 
-        <div className="flex-1 py-6 px-4 space-y-1">
+        <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;

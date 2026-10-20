@@ -1,4 +1,7 @@
+import os
+import json
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
@@ -19,7 +22,8 @@ from app.schemas.review import (
     RubricInfoSchema,
     CriterionEvaluationSchema,
     AIEvaluationSchema,
-    ProfessorReviewSchema
+    ProfessorReviewSchema,
+    DiagramEvaluationSchema
 )
 
 router = APIRouter(tags=["evaluations"])
@@ -104,12 +108,41 @@ def get_evaluation_review(evaluation_id: int, db: Session = Depends(get_db), cur
     ai_feedback_text = None
     if eval_record.feedback and len(eval_record.feedback) > 0:
         ai_feedback_text = eval_record.feedback[-1].feedback_text
+
+    diagram_eval_info = None
+    if getattr(eval_record, "diagram_data", None):
+        try:
+            d_dict = json.loads(eval_record.diagram_data)
+            if d_dict:
+                diagram_eval_info = DiagramEvaluationSchema(
+                    diagram_detected=d_dict.get("diagram_detected", True),
+                    diagram_type=d_dict.get("diagram_type"),
+                    diagram_crop_url=d_dict.get("diagram_crop_url"),
+                    page_number=d_dict.get("page_number"),
+                    bounding_box=d_dict.get("bounding_box"),
+                    model_components=d_dict.get("model_components", []),
+                    student_components=d_dict.get("student_components", []),
+                    matching_components=d_dict.get("matching_components", []),
+                    missing_components=d_dict.get("missing_components", []),
+                    connectivity_errors=d_dict.get("connectivity_errors", []),
+                    reversed_arrows=d_dict.get("reversed_arrows", []),
+                    text_diagram_inconsistencies=d_dict.get("text_diagram_inconsistencies", []),
+                    has_contradiction=d_dict.get("has_contradiction", False),
+                    needs_review=d_dict.get("needs_review", False),
+                    review_reason=d_dict.get("review_reason"),
+                    justification=d_dict.get("justification"),
+                    suggested_marks=d_dict.get("suggested_marks") or d_dict.get("awarded_marks"),
+                    max_marks=d_dict.get("max_marks")
+                )
+        except Exception as e:
+            pass
         
     ai_eval_info = AIEvaluationSchema(
         similarity_score=eval_record.similarity_score,
         criterion_evaluations=crit_evals,
         ai_suggested_marks=eval_record.awarded_marks,
-        ai_feedback=ai_feedback_text
+        ai_feedback=ai_feedback_text,
+        diagram_evaluation=diagram_eval_info
     )
     
     prof_review = ProfessorReviewSchema(
@@ -129,7 +162,11 @@ def get_evaluation_review(evaluation_id: int, db: Session = Depends(get_db), cur
         model_answer_info=model_answer_info,
         rubrics=rubrics_info,
         ai_evaluation=ai_eval_info,
-        professor_review=prof_review
+        professor_review=prof_review,
+        diagram_evaluation=diagram_eval_info,
+        answer_script_id=script.id if script else None,
+        answer_script_file_name=script.file_name if script else None,
+        answer_script_page_count=script.page_count if script else None
     )
 
 @router.patch("/evaluations/{evaluation_id}/review")
@@ -208,3 +245,45 @@ def get_exam_evaluations(exam_id: int, db: Session = Depends(get_db), current_us
         })
         
     return {"exam_id": exam_id, "evaluations": results}
+
+
+@router.get("/evaluations/diagram-file/{filename}")
+def get_diagram_file(filename: str):
+    """Serve a cropped diagram image file safely."""
+    safe_name = os.path.basename(filename)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    diagram_dir = os.path.join(base_dir, "uploads", "diagrams")
+    
+    target_path = None
+    if os.path.exists(diagram_dir):
+        for root, dirs, files in os.walk(diagram_dir):
+            if safe_name in files:
+                target_path = os.path.join(root, safe_name)
+                break
+            
+    if not target_path or not os.path.exists(target_path):
+        raise HTTPException(status_code=404, detail="Diagram image not found")
+        
+    return FileResponse(target_path, media_type="image/png")
+
+
+@router.get("/evaluations/{evaluation_id}/diagram-image")
+def get_evaluation_diagram_image(
+    evaluation_id: int, 
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_professor)
+):
+    """Retrieve the cropped diagram image for a specific evaluation."""
+    eval_record, _, _, _ = _get_evaluation_and_verify_ownership(evaluation_id, db, current_user)
+    if not getattr(eval_record, "diagram_data", None):
+        raise HTTPException(status_code=404, detail="No diagram data found for this evaluation")
+    
+    try:
+        d_dict = json.loads(eval_record.diagram_data)
+        crop_path = d_dict.get("diagram_crop_path")
+        if crop_path and os.path.exists(crop_path):
+            return FileResponse(crop_path, media_type="image/png")
+    except Exception:
+        pass
+        
+    raise HTTPException(status_code=404, detail="Diagram crop image file not found")

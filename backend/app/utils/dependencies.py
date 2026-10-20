@@ -57,3 +57,58 @@ def require_student(current_user: CurrentUser = Depends(get_current_user)) -> Cu
             detail="Insufficient permissions. Student role required."
         )
     return current_user
+
+from typing import Optional
+from fastapi import Query
+
+security_optional = HTTPBearer(auto_error=False)
+
+def get_current_user_flexible(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    token: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+) -> CurrentUser:
+    """Authenticates user either from Authorization Bearer header or token query parameter."""
+    raw_token = None
+    if credentials:
+        raw_token = credentials.credentials
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        payload = jwt.decode(raw_token, settings.secret_key, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        role: str = payload.get("role")
+        if user_id is None or role is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    if role == "professor":
+        user = db.query(Professor).filter(Professor.id == user_id).first()
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+        return CurrentUser(id=user.id, email=user.email, role=role, name=user.name)
+    elif role == "student":
+        user = db.query(Student).filter(Student.id == user_id).first()
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+        return CurrentUser(id=user.id, email=user.email, role=role, name=user.name)
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid role in token")
+
+def require_professor_flexible(current_user: CurrentUser = Depends(get_current_user_flexible)) -> CurrentUser:
+    if current_user.role != "professor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Professor role required."
+        )
+    return current_user
+

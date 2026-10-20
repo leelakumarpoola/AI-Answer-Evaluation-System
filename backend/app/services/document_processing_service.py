@@ -53,10 +53,8 @@ def process_document(document_id: int, db: Session):
         processed_count = 0
         for i in range(page_count):
             page = pdf_document.load_page(i)
-            # Render page to an image (DPI 150)
-            zoom = 150 / 72  # 72 is default PDF points/inch
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
+            # Render page to an image at 300 DPI — required for handwritten document OCR accuracy
+            pix = page.get_pixmap(dpi=300)
             
             # Save image
             page_filename = f"page_{i+1:03d}.png"
@@ -128,9 +126,7 @@ def process_answer_script(answer_script_id: int, db: Session):
         # Process each page
         for i in range(page_count):
             page = pdf_document.load_page(i)
-            zoom = 150 / 72
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
+            pix = page.get_pixmap(dpi=300)  # 300 DPI required for handwriting OCR
             
             page_filename = f"page_{i+1:03d}.png"
             page_filepath = os.path.join(output_dir, page_filename)
